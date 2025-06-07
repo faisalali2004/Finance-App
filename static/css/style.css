@@ -1,0 +1,105 @@
+/* static/css/style.css */
+
+/* General Body and Font Styles */
+body {
+    font-family: 'Inter', sans-serif;
+    /* Tailwind will handle most background/text colors, but this ensures Inter is always used */
+    transition: background-color 0.3s ease, color 0.3s ease; /* Smooth transition for dark mode */
+}
+
+/* Base styling for interactive elements to ensure consistent appearance */
+button, a.button-style, input[type="submit"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1.5rem; /* Equivalent to py-3 px-6 */
+    border-radius: 0.5rem; /* Equivalent to rounded-lg */
+    font-weight: 600; /* Equivalent to font-semibold */
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+}
+
+/* Primary Button Style (Blue theme) */
+.btn-primary {
+    background-color: #3b82f6; /* blue-500 */
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #2563eb; /* blue-600 */
+    transform: translateY(-1px); /* Slight lift on hover */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15); /* Enhanced shadow on hover */
+}
+
+/* Danger Button Style (Red theme - for Add Expense) */
+.btn-danger {
+    background-color: #ef4444; /* red-500 */
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #dc2626; /* red-600 */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Card Styles (for Total Balance/Spent) */
+.card {
+    background-color: white;
+    border-radius: 0.75rem; /* More rounded */
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Dark mode adjustments for cards */
+.dark .card {
+    background-color: #2d3748; /* Darker background for cards */
+    color: #e2e8f0; /* Light text color */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* Stronger shadow for contrast */
+}
+
+/* Input field focus styles */
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="file"]:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: #3b82f6; /* blue-500 */
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); /* blue-500 with opacity */
+}
+
+/* Dark mode for form inputs */
+.dark input[type="text"],
+.dark input[type="number"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="file"],
+.dark select,
+.dark textarea {
+    background-color: #4a5568; /* gray-700 */
+    border-color: #6b7280; /* gray-600 */
+    color: #e2e8f0;
+}
+
+.dark input[type="text"]::placeholder,
+.dark input[type="number"]::placeholder,
+.dark input[type="email"]::placeholder,
+.dark input[type="password"]::placeholder,
+.dark select::placeholder,
+.dark textarea::placeholder {
+    color: #a0aec0; /* gray-400 */
+}
+
+/* Responsive adjustments for the File Manager icon */
+@media (max-width: 768px) {
+    .container .md\:inline {
+        display: none; /* Hide 'File Manager' text on small screens */
+    }
+}

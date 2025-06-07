@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% from "bootstrap5/form.html" import render_form %} {# Import render_form macro for Bootstrap5 #}
+
+{% block title %}Dashboard - Finance Manager{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <h1 class="text-4xl font-extrabold text-gray-900 dark:text-white mb-6 text-center">Your Financial Overview</h1>
+
+    <!-- Balance and Spent Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <!-- Total Balance Card -->
+        <div class="card bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-lg shadow-xl transform hover:scale-105 transition-transform duration-300">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Total Balance</h2>
+                <i class="fas fa-wallet text-3xl opacity-75"></i>
+            </div>
+            <p class="text-5xl font-bold">
+                Rs. {{ total_balance | default('N/A', true) }}
+            </p>
+            <p class="text-sm opacity-90 mt-2">Your current available funds.</p>
+        </div>
+
+        <!-- Total Spent Card -->
+        <div class="card bg-gradient-to-r from-red-500 to-red-600 text-white p-6 rounded-lg shadow-xl transform hover:scale-105 transition-transform duration-300">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Total Spent</h2>
+                <i class="fas fa-money-bill-wave text-3xl opacity-75"></i>
+            </div>
+            <p class="text-5xl font-bold">
+                Rs. {{ total_spent | default('N/A', true) }}
+            </p>
+            <p class="text-sm opacity-90 mt-2">Expenditure this period.</p>
+        </div>
+    </div>
+
+    <!-- Add Money & Add Expense Buttons -->
+    <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6 mb-8">
+        {# Both buttons will open the same modal and set the initial 'type' value #}
+        <button onclick="openTransactionModal('income')" class="btn-primary text-lg w-full sm:w-auto transform hover:scale-105">
+            <i class="fas fa-plus-circle mr-2"></i> Add Money
+        </button>
+        <button onclick="openTransactionModal('expense')" class="btn-danger text-lg w-full sm:w-auto transform hover:scale-105">
+            <i class="fas fa-minus-circle mr-2"></i> Add Expense
+        </button>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Pie Chart for Spending Distribution -->
+        <div class="card p-6">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Spending by Category</h2>
+            {% if pie_chart_data and pie_chart_labels %}
+            <div class="relative h-80">
+                <canvas id="pieChart"></canvas>
+            </div>
+            {% else %}
+            <div class="flex items-center justify-center h-80 bg-gray-100 dark:bg-gray-700 rounded-md border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400">
+                <p class="text-lg">N/A - No spending data available.</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Line Chart for Spending Trend -->
+        <div class="card p-6">
+            <h2 class="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Spending Trend</h2>
+            <!-- Chart Period Selector -->
+            <div class="mb-4 flex justify-center space-x-2">
+                <button id="trend-week" class="px-4 py-2 rounded-md text-sm font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-800 dark:text-blue-100 dark:hover:bg-blue-700 transition-colors duration-200">Week</button>
+                <button id="trend-month" class="px-4 py-2 rounded-md text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors duration-200">Month</button>
+                <button id="trend-year" class="px-4 py-2 rounded-md text-sm font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-800 dark:text-blue-100 dark:hover:bg-blue-700 transition-colors duration-200">Year</button>
+            </div>
+            {% if line_chart_data and line_chart_labels %}
+            <div class="relative h-80">
+                <canvas id="lineChart"></canvas>
+            </div>
+            {% else %}
+            <div class="flex items-center justify-center h-80 bg-gray-100 dark:bg-gray-700 rounded-md border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400">
+                <p class="text-lg">N/A - No trend data available.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{# The single unified transaction modal #}
+<div id="transactionModal" class="modal">
+    <div class="modal-content">
+        <span class="close-button" onclick="closeModal('transactionModal')">&times;</span>
+        <h2 id="transactionModalTitle" class="text-2xl font-semibold mb-4">Add Transaction</h2>
+        <form method="POST" action="{{ url_for('dashboard.add_transaction') }}">
+            {{ transaction_form.csrf_token }} {# CSRF token for security #}
+            {{ render_form(transaction_form) }} {# Render the form using Bootstrap5 macro #}
+            {# Hidden input to store initial type for JS pre-selection, if needed #}
+            <input type="hidden" id="initialTransactionType" name="initial_type" value="">
+        </form>
+    </div>
+</div>
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Parse data from JSON strings passed from Flask
+        const pieChartData = JSON.parse('{{ pie_chart_data | safe }}');
+        const pieChartLabels = JSON.parse('{{ pie_chart_labels | safe }}');
+        const lineChartMonthlyData = JSON.parse('{{ line_chart_data | safe }}'); // Renamed for clarity
+        const lineChartMonthlyLabels = JSON.parse('{{ line_chart_labels | safe }}'); // Renamed for clarity
+        const lineChartWeeklyData = JSON.parse('{{ line_chart_weekly_data | safe }}');
+        const lineChartWeeklyLabels = JSON.parse('{{ line_chart_weekly_labels | safe }}');
+        const lineChartYearlyData = JSON.parse('{{ line_chart_yearly_data | safe }}');
+        const lineChartYearlyLabels = JSON.parse('{{ line_chart_yearly_labels | safe }}');
+
+        // Render Pie Chart
+        if (pieChartData && pieChartData.length > 0) {
+            renderPieChart(pieChartData, pieChartLabels);
+        }
+
+        // Render Line Chart (default to monthly)
+        let myLineChart; // Global variable to hold the chart instance
+        if (lineChartMonthlyData && lineChartMonthlyData.length > 0) {
+            myLineChart = renderLineChart(lineChartMonthlyData, lineChartMonthlyLabels, 'Monthly Spending');
+        } else {
+            // If no monthly data, initialize with empty data
+            myLineChart = renderLineChart([], [], 'No Monthly Data');
+        }
+
+        // Period selection for Line Chart
+        document.getElementById('trend-week').addEventListener('click', function() {
+            if (lineChartWeeklyData && lineChartWeeklyData.length > 0) {
+                updateLineChart(myLineChart, lineChartWeeklyLabels, lineChartWeeklyData, 'Weekly Spending');
+            } else {
+                updateLineChart(myLineChart, [], [], 'No Weekly Data');
+            }
+            setActiveTrendButton('trend-week');
+        });
+        document.getElementById('trend-month').addEventListener('click', function() {
+            if (lineChartMonthlyData && lineChartMonthlyData.length > 0) {
+                updateLineChart(myLineChart, lineChartMonthlyLabels, lineChartMonthlyData, 'Monthly Spending');
+            } else {
+                updateLineChart(myLineChart, [], [], 'No Monthly Data');
+            }
+            setActiveTrendButton('trend-month');
+        });
+        document.getElementById('trend-year').addEventListener('click', function() {
+            if (lineChartYearlyData && lineChartYearlyData.length > 0) {
+                updateLineChart(myLineChart, lineChartYearlyLabels, lineChartYearlyData, 'Yearly Spending');
+            } else {
+                updateLineChart(myLineChart, [], [], 'No Yearly Data');
+            }
+            setActiveTrendButton('trend-year');
+        });
+
+        // Helper function to set active button style
+        function setActiveTrendButton(activeId) {
+            const buttons = ['trend-week', 'trend-month', 'trend-year'];
+            buttons.forEach(id => {
+                const button = document.getElementById(id);
+                if (id === activeId) {
+                    button.classList.remove('bg-blue-100', 'text-blue-800', 'dark:bg-blue-800', 'dark:text-blue-100');
+                    button.classList.add('bg-blue-500', 'text-white', 'dark:bg-blue-600');
+                } else {
+                    button.classList.remove('bg-blue-500', 'text-white', 'dark:bg-blue-600');
+                    button.classList.add('bg-blue-100', 'text-blue-800', 'dark:bg-blue-800', 'dark:text-blue-100');
+                }
+            });
+        }
+        // Set initial active button
+        setActiveTrendButton('trend-month');
+
+        // --- Chart.js Rendering Functions (Moved here for direct update, ideally in charts.js) ---
+        function renderPieChart(data, labels) {
+            const ctx = document.getElementById('pieChart');
+            if (!ctx) return;
+
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            '#3b82f6', // blue-500
+                            '#ef4444', // red-500
+                            '#f59e0b', // amber-500
+                            '#10b981', // emerald-500
+                            '#6366f1', // indigo-500
+                            '#8b5cf6', // violet-500
+                            '#ec4899'  // pink-500
+                        ],
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: getComputedStyle(document.documentElement).getPropertyValue('--text-color') || 'rgb(107 114 128)'
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed !== null) {
+                                        label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'PKR' }).format(context.parsed);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderLineChart(data, labels, chartTitle) {
+            const ctx = document.getElementById('lineChart');
+            if (!ctx) return;
+
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: chartTitle,
+                        data: data,
+                        borderColor: '#3b82f6', // blue-500
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)', // blue-500 with opacity
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: '#3b82f6'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: getComputedStyle(document.documentElement).getPropertyValue('--text-color') || 'rgb(107 114 128)'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: getComputedStyle(document.documentElement).getPropertyValue('--text-color') || 'rgb(107 114 128)'
+                            },
+                            grid: {
+                                color: 'rgba(229, 231, 235, 0.3)'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: getComputedStyle(document.documentElement).getPropertyValue('--text-color') || 'rgb(107 114 128)',
+                                callback: function(value) {
+                                    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'PKR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(229, 231, 235, 0.3)'
+                            }
+                        }
+                    }
+                }
+            });
+            return chart;
+        }
+
+        function updateLineChart(chart, newLabels, newData, newTitle) {
+            if (chart) {
+                chart.data.labels = newLabels;
+                chart.data.datasets[0].data = newData;
+                chart.data.datasets[0].label = newTitle;
+                chart.update();
+            }
+        }
+
+        // Dynamic text color for charts based on theme
+        const htmlElement = document.documentElement;
+        const observer = new MutationObserver(() => {
+            const isDarkMode = htmlElement.classList.contains('dark');
+            const textColor = isDarkMode ? '#e2e8f0' : 'rgb(107 114 128)';
+            document.documentElement.style.setProperty('--text-color', textColor);
+            // In a more complex app, you'd update chart options directly here
+            // For now, refreshing charts might be needed if they are already rendered
+        });
+        observer.observe(htmlElement, { attributes: true, attributeFilter: ['class'] });
+
+        // Initial setting for text color
+        const isDarkModeInitial = htmlElement.classList.contains('dark');
+        const initialTextColor = isDarkModeInitial ? '#e2e8f0' : 'rgb(107 114 128)';
+        document.documentElement.style.setProperty('--text-color', initialTextColor);
+
+        // --- Modal Logic for Unified Transaction Form ---
+        const transactionModal = document.getElementById('transactionModal');
+        const transactionModalTitle = document.getElementById('transactionModalTitle');
+        const transactionFormTypeField = document.getElementById('type'); // The 'type' select field
+
+        window.openTransactionModal = function(type) {
+            // Set the selected type in the form's dropdown
+            transactionFormTypeField.value = type;
+
+            // Update modal title dynamically
+            if (type === 'income') {
+                transactionModalTitle.textContent = 'Add Money';
+            } else {
+                transactionModalTitle.textContent = 'Add Expense';
+            }
+            transactionModal.style.display = 'flex';
+        };
+
+        // Existing closeModal function is in base.html
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target == transactionModal) {
+                transactionModal.style.display = "none";
+            }
+        };
+
+    });
+</script>
+{% endblock %}
