@@ -1,8 +1,7 @@
-# app/dashboard/forms.py
-
 from flask_wtf import FlaskForm
-from wtforms import StringField, DecimalField, SelectField, SubmitField, TextAreaField # Added TextAreaField
+from wtforms import StringField, DecimalField, SelectField, SubmitField, TextAreaField, DateField
 from wtforms.validators import DataRequired, NumberRange, Length, Optional
+from datetime import date
 
 class TransactionForm(FlaskForm):
     """
@@ -12,8 +11,6 @@ class TransactionForm(FlaskForm):
         'Type',
         choices=[('income', 'Add Money'), ('expense', 'Add Expense')],
         validators=[DataRequired()],
-        # Optional: You might want to set a default or use client-side JS to pre-select
-        # based on which button (Add Money/Add Expense) was clicked.
     )
 
     amount = DecimalField(
@@ -24,7 +21,7 @@ class TransactionForm(FlaskForm):
         ]
     )
 
-    category = SelectField( # Changed from StringField to SelectField as per your request
+    category = SelectField(
         'Category',
         choices=[
             ('salary', 'Salary'),
@@ -36,14 +33,32 @@ class TransactionForm(FlaskForm):
             ('shopping', 'Shopping'),
             ('bills', 'Bills'),
             ('misc', 'Miscellaneous'),
-            # You might want to add more categories or allow users to define custom ones
         ],
         validators=[DataRequired()]
     )
 
-    description = TextAreaField( # Changed from StringField to TextAreaField
+    description = TextAreaField(
         'Description (optional)',
         validators=[Optional(), Length(max=200, message='Description cannot exceed 200 characters.')]
     )
 
-    submit = SubmitField('Submit Transaction') # Generic submit button text
+    date = DateField(
+        'Date',
+        format='%Y-%m-%d',
+        default=date.today,
+        validators=[DataRequired()]
+    )
+
+    # If you want to support selecting an account in the transaction modal:
+    account_id = SelectField(
+        'Account',
+        coerce=int,
+        validators=[DataRequired()],
+        choices=[]  # You should set choices in your route before rendering the form
+    )
+
+    submit = SubmitField('Submit Transaction')
+
+class CreateAccountForm(FlaskForm):
+    name = StringField('Account Name', validators=[DataRequired(), Length(min=2, max=50)])
+    submit = SubmitField('Create Account')

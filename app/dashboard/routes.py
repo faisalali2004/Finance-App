@@ -2,127 +2,160 @@ from flask import render_template, request, flash, redirect, url_for, jsonify
 from flask_login import login_required, current_user
 from app.dashboard import dashboard_bp
 from app.dashboard.forms import TransactionForm
-from app.models import Transaction
+from app.models import Transaction, Account, Category
 from app.extensions import db
-from datetime import datetime, timedelta
-from sqlalchemy import func
-import json
+from collections import defaultdict
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
-# Utility functions for dashboard data aggregation
-def get_total_balance(user_id):
-    income = db.session.query(func.sum(Transaction.amount)).filter_by(user_id=user_id, type='income').scalar() or 0
-    expenses = db.session.query(func.sum(Transaction.amount)).filter_by(user_id=user_id, type='expense').scalar() or 0
-    return income - expenses
-
-def get_total_spent(user_id):
-    expenses = db.session.query(func.sum(Transaction.amount)).filter_by(user_id=user_id, type='expense').scalar() or 0
-    return expenses
-
-def get_spending_by_category(user_id):
-    category_spending = db.session.query(
-        Transaction.category,
-        func.sum(Transaction.amount)
-    ).filter_by(user_id=user_id, type='expense').group_by(Transaction.category).all()
-    return {category: float(amount) for category, amount in category_spending if category is not None}
-
-def get_spending_trend(user_id, period='month'):
-    data = []
-    labels = []
-    current_date = datetime.utcnow()
-
-    if period == 'month':
-        for i in range(6):
-            month_start = (current_date.replace(day=1) - timedelta(days=30*i)).replace(day=1)
-            month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-            total_expense = db.session.query(func.sum(Transaction.amount)).filter(
-                Transaction.user_id == user_id,
-                Transaction.type == 'expense',
-                Transaction.date >= month_start,
-                Transaction.date <= month_end
-            ).scalar() or 0
-            labels.insert(0, month_start.strftime('%b %Y'))
-            data.insert(0, float(total_expense))
-    elif period == 'week':
-        for i in range(4):
-            week_end = current_date - timedelta(weeks=i)
-            week_start = week_end - timedelta(days=week_end.weekday())
-            total_expense = db.session.query(func.sum(Transaction.amount)).filter(
-                Transaction.user_id == user_id,
-                Transaction.type == 'expense',
-                Transaction.date >= week_start,
-                Transaction.date < week_start + timedelta(weeks=1)
-            ).scalar() or 0
-            labels.insert(0, f"Week {week_start.isocalendar()[1]}")
-            data.insert(0, float(total_expense))
-    elif period == 'year':
-        for i in range(3):
-            year_start = current_date.replace(year=current_date.year - i, month=1, day=1)
-            year_end = current_date.replace(year=current_date.year - i, month=12, day=31)
-            total_expense = db.session.query(func.sum(Transaction.amount)).filter(
-                Transaction.user_id == user_id,
-                Transaction.type == 'expense',
-                Transaction.date >= year_start,
-                Transaction.date <= year_end
-            ).scalar() or 0
-            labels.insert(0, str(year_start.year))
-            data.insert(0, float(total_expense))
-
-    return {'labels': labels, 'data': data}
-
-# Routes
 @dashboard_bp.route('/')
 @login_required
 def dashboard():
+    accounts = Account.query.filter_by(user_id=current_user.id).all()
+    categories = Category.query.filter_by(user_id=current_user.id).all()
+    transactions = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).all()
+
+    # Calculate balances for each account
+    account_balances = {}
+    for account in accounts:
+        income = sum(t.amount for t in transactions if t.account_id == account.id and t.type == 'income')
+        expense = sum(t.amount for t in transactions if t.account_id == account.id and t.type == 'expense')
+        account_balances[account.id] = income - expense
+
+    # Summary
+    total_income = sum(t.amount for t in transactions if t.type == 'income')
+    total_expense = sum(t.amount for t in transactions if t.type == 'expense')
+    total_balance = total_income - total_expense
+
+    # Recent transactions (last 10)
+    recent_transactions = transactions[:10]
+
+    # Pie chart: Expenses by category
+    expense_by_cat = defaultdict(float)
+    for t in transactions:
+        if t.type == 'expense':
+            expense_by_cat[t.category] += t.amount
+    expense_categories_labels = list(expense_by_cat.keys())
+    expense_amounts = list(expense_by_cat.values())
+
+    # Bar chart: Income & Expenses by month (last 6 months)
+    now = datetime.now()
+    chart_labels = []
+    chart_income = []
+    chart_expense = []
+    for i in range(5, -1, -1):
+        month = (now - relativedelta(months=i)).strftime('%b %Y')
+        chart_labels.append(month)
+        month_income = sum(
+            t.amount for t in transactions
+            if t.type == 'income' and t.date.strftime('%b %Y') == month
+        )
+        month_expense = sum(
+            t.amount for t in transactions
+            if t.type == 'expense' and t.date.strftime('%b %Y') == month
+        )
+        chart_income.append(month_income)
+        chart_expense.append(month_expense)
+
+    # Separate categories for income and expense
+    income_categories = [(c.name, c.name) for c in categories if c.type == 'income']
+    expense_categories = [(c.name, c.name) for c in categories if c.type == 'expense']
+
     transaction_form = TransactionForm()
-    user_id = current_user.id if current_user.is_authenticated else None
-
-    total_balance = get_total_balance(user_id) if user_id else 0.0
-    total_spent = get_total_spent(user_id) if user_id else 0.0
-    category_data = get_spending_by_category(user_id) if user_id else {}
-
-    monthly_trend = get_spending_trend(user_id, 'month') if user_id else {'labels': [], 'data': []}
-    weekly_trend = get_spending_trend(user_id, 'week') if user_id else {'labels': [], 'data': []}
-    yearly_trend = get_spending_trend(user_id, 'year') if user_id else {'labels': [], 'data': []}
-
-    pie_chart_labels = list(category_data.keys())
-    pie_chart_data = list(category_data.values())
+    transaction_form.account_id.choices = [
+        (a.id, f"{a.name} (Balance: Rs {account_balances[a.id]:.2f})") for a in accounts
+    ] + [(-1, "+ Add another account")]
+    # Default to expense categories for the expense modal, income for income modal
+    transaction_form.category.choices = expense_categories + [("add_category", "+ Add new category")]
 
     return render_template(
         'dashboard/index.html',
-        total_balance=f"{total_balance:,.2f}",
-        total_spent=f"{total_spent:,.2f}",
-        pie_chart_data=json.dumps(pie_chart_data),
-        pie_chart_labels=json.dumps(pie_chart_labels),
-        line_chart_data=json.dumps(monthly_trend['data']),
-        line_chart_labels=json.dumps(monthly_trend['labels']),
-        line_chart_weekly_data=json.dumps(weekly_trend['data']),
-        line_chart_weekly_labels=json.dumps(weekly_trend['labels']),
-        line_chart_yearly_data=json.dumps(yearly_trend['data']),
-        line_chart_yearly_labels=json.dumps(yearly_trend['labels']),
-        transaction_form=transaction_form
+        accounts=accounts,
+        account_balances=account_balances,
+        categories=categories,
+        transaction_form=transaction_form,
+        total_income=total_income,
+        total_expense=total_expense,
+        total_balance=total_balance,
+        recent_transactions=recent_transactions,
+        expense_categories_labels=expense_categories_labels,
+        expense_amounts=expense_amounts,
+        chart_labels=chart_labels,
+        chart_income=chart_income,
+        chart_expense=chart_expense,
+        income_categories=income_categories,
+        expense_categories=expense_categories
     )
 
 @dashboard_bp.route('/add_transaction', methods=['POST'])
 @login_required
 def add_transaction():
+    accounts = Account.query.filter_by(user_id=current_user.id).all()
+    categories = Category.query.filter_by(user_id=current_user.id).all()
     form = TransactionForm()
-    if form.validate_on_submit():
-        description_data = form.description.data if form.description.data else None
+    form.account_id.choices = [(a.id, a.name) for a in accounts] + [(-1, "+ Add another account")]
+    tx_type = request.form.get('type')
+    if tx_type == 'income':
+        form.category.choices = [(c.name, c.name) for c in categories if c.type == 'income'] + [("add_category", "+ Add new category")]
+    else:
+        form.category.choices = [(c.name, c.name) for c in categories if c.type == 'expense'] + [("add_category", "+ Add new category")]
 
+    if form.validate_on_submit():
         new_tx = Transaction(
             user_id=current_user.id,
+            account_id=form.account_id.data,
             amount=form.amount.data,
             category=form.category.data,
-            type=form.type.data,
-            description=description_data
+            type=tx_type,
+            date=form.date.data,
+            description=form.description.data
         )
         db.session.add(new_tx)
         db.session.commit()
-        flash(f"{form.type.data.capitalize()} added successfully.", "success")
+        flash(f"{tx_type.capitalize()} added successfully.", "success")
     else:
-        for field, errors in form.errors.items():
-            for error in errors:
-                flash(f"Error in {field}: {error}", 'danger')
         flash("Please correct the errors in the form.", "danger")
+    return redirect(url_for('dashboard.dashboard'))
 
+@dashboard_bp.route('/add_category', methods=['POST'])
+@login_required
+def add_category():
+    name = request.form.get('category_name')
+    cat_type = request.form.get('category_type')
+    if name and cat_type in ['income', 'expense']:
+        exists = Category.query.filter_by(user_id=current_user.id, name=name, type=cat_type).first()
+        if not exists:
+            cat = Category(name=name, type=cat_type, user_id=current_user.id)
+            db.session.add(cat)
+            db.session.commit()
+            return jsonify(success=True)
+        else:
+            return jsonify(success=False, message="Category already exists.")
+    return jsonify(success=False, message="Invalid data.")
+
+@dashboard_bp.route('/add_account', methods=['POST'])
+@login_required
+def add_account():
+    name = request.form.get('account_name')
+    if name:
+        exists = Account.query.filter_by(user_id=current_user.id, name=name).first()
+        if not exists:
+            acc = Account(name=name, user_id=current_user.id)
+            db.session.add(acc)
+            db.session.commit()
+            return jsonify(success=True)
+        else:
+            return jsonify(success=False, message="Account already exists.")
+    return jsonify(success=False, message="No account name provided.")
+
+@dashboard_bp.route('/delete_transaction/<int:tx_id>', methods=['POST'])
+@login_required
+def delete_transaction(tx_id):
+    tx = Transaction.query.filter_by(id=tx_id, user_id=current_user.id).first()
+    if tx:
+        db.session.delete(tx)
+        db.session.commit()
+        flash("Transaction deleted.", "success")
+    else:
+        flash("Transaction not found.", "danger")
     return redirect(url_for('dashboard.dashboard'))

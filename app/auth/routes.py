@@ -13,7 +13,7 @@ from app.extensions import mail # Assuming 'mail' is also initialized in app/ext
 def login():
     if current_user.is_authenticated:
         flash('You are already logged in.', 'info') # Inform user if already logged in
-        return redirect(url_for('dashboard.index'))
+        return redirect(url_for('dashboard.dashboard'))
 
     form = LoginForm()
     if form.validate_on_submit():
@@ -23,7 +23,7 @@ def login():
             login_user(user, remember=form.remember.data) # Pass remember me value
             next_page = request.args.get('next')
             flash('Logged in successfully!', 'success')
-            return redirect(next_page or url_for('dashboard.index'))
+            return redirect(next_page or url_for('dashboard.dashboard'))
         else:
             flash('Login Unsuccessful. Please check email and password', 'danger')
     return render_template('auth/login.html', title='Login', form=form)
@@ -32,7 +32,7 @@ def login():
 def register():
     if current_user.is_authenticated:
         flash('You are already registered and logged in.', 'info')
-        return redirect(url_for('dashboard.index'))
+        return redirect(url_for('dashboard.dashboard'))
 
     form = RegistrationForm()
     if form.validate_on_submit():
@@ -75,7 +75,7 @@ If you did not make this request then simply ignore this email and no changes wi
 @auth_bp.route('/reset_password', methods=['GET', 'POST'])
 def reset_request():
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard.index'))
+        return redirect(url_for('dashboard.dashboard'))
     form = RequestResetForm()
     if form.validate_on_submit():
         user = User.query.filter_by(email=form.email.data).first()
@@ -93,7 +93,7 @@ def reset_request():
 @auth_bp.route('/reset_password/<token>', methods=['GET', 'POST'])
 def reset_token(token):
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard.index'))
+        return redirect(url_for('dashboard.dashboard'))
     user = User.verify_reset_token(token) # This method needs to be added to your User model
     if not user:
         flash('That is an invalid or expired token.', 'danger')
@@ -121,7 +121,7 @@ def change_password():
                 current_user.password_hash = generate_password_hash(form.new_password.data)
                 db.session.commit()
                 flash('Your password has been changed successfully.', 'success')
-                return redirect(url_for('dashboard.index')) # Redirect to dashboard after success
+                return redirect(url_for('dashboard.dashboard')) # Redirect to dashboard after success
         else:
             flash('Incorrect current password.', 'danger')
     return render_template('auth/change_password.html', title='Change Password', form=form)
